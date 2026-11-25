@@ -7,6 +7,7 @@ const schema = a.schema({
       produto: a.string().required(),
       valor: a.float().required(),
       status: a.string().required(),
+      usuarioEmail: a.string(),
     })
     .authorization((allow) => [allow.publicApiKey()]),
 });
