@@ -4,6 +4,16 @@ import { generateClient } from "aws-amplify/data";
 
 const client = generateClient<Schema>();
 
+interface Usuario {
+  nome: string;
+  email: string;
+  senha: string;
+}
+
+const USUARIOS_INICIAIS: Usuario[] = [
+  { nome: "Administrador", email: "admin@vendascloud.com", senha: "123456" },
+];
+
 type FiltroStatus = "Todos" | "Pago" | "Pendente" | "Cancelado";
 type Ordenacao = "recentes" | "maior" | "menor";
 
@@ -14,7 +24,33 @@ function formatarMoeda(valor: number): string {
   });
 }
 
+function carregarUsuarios(): Usuario[] {
+  try {
+    const salvo = localStorage.getItem("vendascloud_usuarios");
+    if (salvo) return JSON.parse(salvo);
+  } catch {
+    // ignora erro de leitura
+  }
+  return USUARIOS_INICIAIS;
+}
+
 export default function App() {
+  const [usuarios, setUsuarios] = useState<Usuario[]>(carregarUsuarios);
+  const [usuarioLogado, setUsuarioLogado] = useState<Usuario | null>(() => {
+    try {
+      const salvo = localStorage.getItem("vendascloud_sessao");
+      return salvo ? JSON.parse(salvo) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [modoAuth, setModoAuth] = useState<"login" | "cadastro">("login");
+  const [nomeInput, setNomeInput] = useState("");
+  const [emailInput, setEmailInput] = useState("");
+  const [senhaInput, setSenhaInput] = useState("");
+  const [erroAuth, setErroAuth] = useState("");
+
   const [vendas, setVendas] = useState<Array<Schema["Venda"]["type"]>>([]);
   const [cliente, setCliente] = useState("");
   const [produto, setProduto] = useState("");
@@ -33,11 +69,71 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!usuarioLogado) return;
     const sub = client.models.Venda.observeQuery().subscribe({
       next: (data) => setVendas([...data.items]),
     });
     return () => sub.unsubscribe();
-  }, []);
+  }, [usuarioLogado]);
+
+  function handleLogin(e: FormEvent) {
+    e.preventDefault();
+    const encontrado = usuarios.find(
+      (u) =>
+        u.email.toLowerCase() === emailInput.trim().toLowerCase() &&
+        u.senha === senhaInput
+    );
+
+    if (encontrado) {
+      localStorage.setItem("vendascloud_sessao", JSON.stringify(encontrado));
+      setUsuarioLogado(encontrado);
+      setErroAuth("");
+      setSenhaInput("");
+    } else {
+      setErroAuth("E-mail ou senha incorretos.");
+    }
+  }
+
+  function handleCadastro(e: FormEvent) {
+    e.preventDefault();
+    const emailLimpo = emailInput.trim().toLowerCase();
+    const nomeLimpo = nomeInput.trim();
+
+    if (!nomeLimpo || !emailLimpo || senhaInput.length < 4) {
+      setErroAuth("Preencha todos os campos (senha com no mínimo 4 caracteres).");
+      return;
+    }
+
+    const jaExiste = usuarios.some((u) => u.email.toLowerCase() === emailLimpo);
+    if (jaExiste) {
+      setErroAuth("Este e-mail já está cadastrado. Faça login.");
+      return;
+    }
+
+    const novoUsuario: Usuario = {
+      nome: nomeLimpo,
+      email: emailLimpo,
+      senha: senhaInput,
+    };
+
+    const listaAtualizada = [...usuarios, novoUsuario];
+    setUsuarios(listaAtualizada);
+    localStorage.setItem("vendascloud_usuarios", JSON.stringify(listaAtualizada));
+    localStorage.setItem("vendascloud_sessao", JSON.stringify(novoUsuario));
+    setUsuarioLogado(novoUsuario);
+    setErroAuth("");
+    setNomeInput("");
+    setEmailInput("");
+    setSenhaInput("");
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("vendascloud_sessao");
+    setUsuarioLogado(null);
+    setEmailInput("");
+    setSenhaInput("");
+    setErroAuth("");
+  }
 
   function mostrarToast(mensagem: string) {
     setToast(mensagem);
@@ -164,6 +260,131 @@ export default function App() {
   const qtdCancelado = vendas.filter((v) => v.status === "Cancelado").length;
   const taxaConversao = totalVendas > 0 ? Math.round((qtdPago / totalVendas) * 100) : 0;
 
+  // Tela de Login / Criar Conta
+  if (!usuarioLogado) {
+    return (
+      <div
+        className="app-shell"
+        style={{ display: "grid", placeItems: "center", padding: "24px" }}
+      >
+        <div className="bg-glow bg-glow-1" />
+        <div className="bg-glow bg-glow-2" />
+
+        <div
+          className="glass-card fade-in"
+          style={{ width: "100%", maxWidth: "420px", position: "relative", zIndex: 1 }}
+        >
+          <div className="brand" style={{ marginBottom: "20px" }}>
+            <div className="brand-icon">V</div>
+            <div>
+              <h1>VendasCloud Pro</h1>
+              <p className="muted">
+                {modoAuth === "login"
+                  ? "Entre com sua conta para acessar"
+                  : "Crie sua conta gratuita na hora"}
+              </p>
+            </div>
+          </div>
+
+          <div className="filter-tabs" style={{ marginBottom: "20px", display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+            <button
+              type="button"
+              className={`tab-btn ${modoAuth === "login" ? "active" : ""}`}
+              onClick={() => {
+                setModoAuth("login");
+                setErroAuth("");
+              }}
+            >
+              Entrar
+            </button>
+            <button
+              type="button"
+              className={`tab-btn ${modoAuth === "cadastro" ? "active" : ""}`}
+              onClick={() => {
+                setModoAuth("cadastro");
+                setErroAuth("");
+              }}
+            >
+              Criar Conta
+            </button>
+          </div>
+
+          <form
+            onSubmit={modoAuth === "login" ? handleLogin : handleCadastro}
+            className="modal-form"
+          >
+            {modoAuth === "cadastro" && (
+              <label>
+                <span>Seu Nome</span>
+                <input
+                  type="text"
+                  className="input-dark"
+                  placeholder="Ex: João Lucas"
+                  value={nomeInput}
+                  onChange={(e) => {
+                    setNomeInput(e.target.value);
+                    setErroAuth("");
+                  }}
+                  required
+                />
+              </label>
+            )}
+
+            <label>
+              <span>E-mail</span>
+              <input
+                type="email"
+                className="input-dark"
+                placeholder="seu@email.com"
+                value={emailInput}
+                onChange={(e) => {
+                  setEmailInput(e.target.value);
+                  setErroAuth("");
+                }}
+                required
+              />
+            </label>
+
+            <label>
+              <span>Senha</span>
+              <input
+                type="password"
+                className="input-dark"
+                placeholder={modoAuth === "cadastro" ? "Crie uma senha (mín. 4 caracteres)" : "Digite sua senha"}
+                value={senhaInput}
+                onChange={(e) => {
+                  setSenhaInput(e.target.value);
+                  setErroAuth("");
+                }}
+                required
+              />
+            </label>
+
+            {erroAuth && (
+              <div
+                style={{
+                  background: "rgba(244, 63, 94, 0.14)",
+                  border: "1px solid rgba(244, 63, 94, 0.35)",
+                  color: "#fb7185",
+                  padding: "10px 12px",
+                  borderRadius: "10px",
+                  fontSize: "0.84rem",
+                }}
+              >
+                {erroAuth}
+              </div>
+            )}
+
+            <button type="submit" className="btn-primary" style={{ marginTop: "6px", width: "100%" }}>
+              {modoAuth === "login" ? "Entrar no Painel" : "Criar Conta e Entrar"}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // Painel Principal
   return (
     <div className="app-shell">
       <div className="bg-glow bg-glow-1" />
@@ -179,7 +400,7 @@ export default function App() {
               <h1>VendasCloud Pro</h1>
               <div className="live-status">
                 <span className="pulse-dot" />
-                <span>AWS Amplify • Sincronizado em tempo real</span>
+                <span>Olá, {usuarioLogado.nome} • AWS Amplify em tempo real</span>
               </div>
             </div>
           </div>
@@ -198,6 +419,14 @@ export default function App() {
             </button>
             <button type="button" className="btn-primary" onClick={() => setModalAberto(true)}>
               + Nova Venda
+            </button>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={handleLogout}
+              style={{ color: "#fb7185", borderColor: "rgba(244, 63, 94, 0.3)" }}
+            >
+              Sair
             </button>
           </div>
         </header>
