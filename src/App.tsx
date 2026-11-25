@@ -4,6 +4,10 @@ import { generateClient } from "aws-amplify/data";
 
 const client = generateClient<Schema>();
 
+// Altere aqui para o e-mail e a senha que você quiser usar
+const EMAIL_CORRETO = "admin@vendascloud.com";
+const SENHA_CORRETA = "123456";
+
 type FiltroStatus = "Todos" | "Pago" | "Pendente" | "Cancelado";
 type Ordenacao = "recentes" | "maior" | "menor";
 
@@ -15,6 +19,13 @@ function formatarMoeda(valor: number): string {
 }
 
 export default function App() {
+  const [logado, setLogado] = useState<boolean>(() => {
+    return localStorage.getItem("vendascloud_logado") === "true";
+  });
+  const [emailInput, setEmailInput] = useState("");
+  const [senhaInput, setSenhaInput] = useState("");
+  const [erroLogin, setErroLogin] = useState("");
+
   const [vendas, setVendas] = useState<Array<Schema["Venda"]["type"]>>([]);
   const [cliente, setCliente] = useState("");
   const [produto, setProduto] = useState("");
@@ -33,11 +44,34 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!logado) return;
     const sub = client.models.Venda.observeQuery().subscribe({
       next: (data) => setVendas([...data.items]),
     });
     return () => sub.unsubscribe();
-  }, []);
+  }, [logado]);
+
+  function handleLogin(e: FormEvent) {
+    e.preventDefault();
+    if (
+      emailInput.trim().toLowerCase() === EMAIL_CORRETO.toLowerCase() &&
+      senhaInput === SENHA_CORRETA
+    ) {
+      localStorage.setItem("vendascloud_logado", "true");
+      setLogado(true);
+      setErroLogin("");
+      setSenhaInput("");
+    } else {
+      setErroLogin("E-mail ou senha incorretos. Tente novamente.");
+    }
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("vendascloud_logado");
+    setLogado(false);
+    setEmailInput("");
+    setSenhaInput("");
+  }
 
   function mostrarToast(mensagem: string) {
     setToast(mensagem);
@@ -164,6 +198,84 @@ export default function App() {
   const qtdCancelado = vendas.filter((v) => v.status === "Cancelado").length;
   const taxaConversao = totalVendas > 0 ? Math.round((qtdPago / totalVendas) * 100) : 0;
 
+  // Tela de Login
+  if (!logado) {
+    return (
+      <div
+        className="app-shell"
+        style={{ display: "grid", placeItems: "center", padding: "24px" }}
+      >
+        <div className="bg-glow bg-glow-1" />
+        <div className="bg-glow bg-glow-2" />
+
+        <div
+          className="glass-card fade-in"
+          style={{ width: "100%", maxWidth: "410px", position: "relative", zIndex: 1 }}
+        >
+          <div className="brand" style={{ marginBottom: "22px" }}>
+            <div className="brand-icon">V</div>
+            <div>
+              <h1>VendasCloud Pro</h1>
+              <p className="muted">Acesso restrito ao painel</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleLogin} className="modal-form">
+            <label>
+              <span>E-mail</span>
+              <input
+                type="email"
+                className="input-dark"
+                placeholder="admin@vendascloud.com"
+                value={emailInput}
+                onChange={(e) => {
+                  setEmailInput(e.target.value);
+                  setErroLogin("");
+                }}
+                required
+              />
+            </label>
+
+            <label>
+              <span>Senha</span>
+              <input
+                type="password"
+                className="input-dark"
+                placeholder="Digite sua senha"
+                value={senhaInput}
+                onChange={(e) => {
+                  setSenhaInput(e.target.value);
+                  setErroLogin("");
+                }}
+                required
+              />
+            </label>
+
+            {erroLogin && (
+              <div
+                style={{
+                  background: "rgba(244, 63, 94, 0.14)",
+                  border: "1px solid rgba(244, 63, 94, 0.35)",
+                  color: "#fb7185",
+                  padding: "10px 12px",
+                  borderRadius: "10px",
+                  fontSize: "0.84rem",
+                }}
+              >
+                {erroLogin}
+              </div>
+            )}
+
+            <button type="submit" className="btn-primary" style={{ marginTop: "6px", width: "100%" }}>
+              Entrar no Painel
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // Painel Principal
   return (
     <div className="app-shell">
       <div className="bg-glow bg-glow-1" />
@@ -198,6 +310,14 @@ export default function App() {
             </button>
             <button type="button" className="btn-primary" onClick={() => setModalAberto(true)}>
               + Nova Venda
+            </button>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={handleLogout}
+              style={{ color: "#fb7185", borderColor: "rgba(244, 63, 94, 0.3)" }}
+            >
+              Sair
             </button>
           </div>
         </header>
