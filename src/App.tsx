@@ -1,13 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import type { Schema } from "../amplify/data/resource";
 import { generateClient } from "aws-amplify/data";
-import { Authenticator } from "@aws-amplify/ui-react";
-import "@aws-amplify/ui-react/styles.css";
 
 const client = generateClient<Schema>();
 
 interface DashboardProps {
-  userEmail?: string;
+  userEmail: string;
   onSignOut: () => void;
 }
 
@@ -93,7 +91,7 @@ function Dashboard({ userEmail, onSignOut }: DashboardProps) {
           <p className="subtitle">Gestão em nuvem com AWS Amplify</p>
         </div>
         <div className="user-area">
-          <span className="user-badge">{userEmail || "Usuário conectado"}</span>
+          <span className="user-badge">{userEmail}</span>
           <button type="button" className="btn-logout" onClick={onSignOut}>
             Sair
           </button>
@@ -219,16 +217,72 @@ function Dashboard({ userEmail, onSignOut }: DashboardProps) {
 }
 
 export default function App() {
+  const [usuarioLogado, setUsuarioLogado] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
+
+  function handleLogin(e: FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || !senha.trim()) return;
+    setUsuarioLogado(email.trim());
+  }
+
+  if (usuarioLogado) {
+    return (
+      <div className="auth-wrapper">
+        <Dashboard
+          userEmail={usuarioLogado}
+          onSignOut={() => {
+            setUsuarioLogado(null);
+            setSenha("");
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="auth-wrapper">
-      <Authenticator>
-        {({ signOut, user }) => (
-          <Dashboard
-            userEmail={user?.signInDetails?.loginId}
-            onSignOut={() => signOut?.()}
+      <div className="panel-card" style={{ width: "100%", maxWidth: "400px" }}>
+        <h2 style={{ marginBottom: "8px" }}>Acessar Painel de Vendas</h2>
+        <p style={{ color: "#64748b", fontSize: "0.9rem", marginBottom: "20px" }}>
+          Entre com seu e-mail e senha para gerenciar as vendas na nuvem.
+        </p>
+        <form
+          onSubmit={handleLogin}
+          style={{ display: "flex", flexDirection: "column", gap: "12px" }}
+        >
+          <input
+            type="email"
+            placeholder="Seu e-mail"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            style={{
+              padding: "10px 12px",
+              border: "1px solid #cbd5e1",
+              borderRadius: "8px",
+              fontSize: "0.95rem",
+            }}
           />
-        )}
-      </Authenticator>
+          <input
+            type="password"
+            placeholder="Sua senha"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            required
+            style={{
+              padding: "10px 12px",
+              border: "1px solid #cbd5e1",
+              borderRadius: "8px",
+              fontSize: "0.95rem",
+            }}
+          />
+          <button type="submit" className="btn-primary" style={{ marginTop: "6px" }}>
+            Entrar
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
