@@ -68,12 +68,29 @@ export default function App() {
   const [modalAberto, setModalAberto] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
+  // Carrega apenas as vendas do usuário logado
   useEffect(() => {
-    if (!usuarioLogado) return;
+    if (!usuarioLogado) {
+      setVendas([]);
+      return;
+    }
+    const emailAtual = usuarioLogado.email.toLowerCase();
     const sub = client.models.Venda.observeQuery().subscribe({
-      next: (data) => setVendas([...data.items]),
+      next: (data) => {
+        const minhasVendas = data.items.filter(
+          (v) => v.usuarioEmail?.toLowerCase() === emailAtual
+        );
+        setVendas(minhasVendas);
+      },
     });
     return () => sub.unsubscribe();
+  }, [usuarioLogado]);
+
+  // Carrega a meta mensal salva para este usuário
+  useEffect(() => {
+    if (!usuarioLogado) return;
+    const metaSalva = localStorage.getItem(`vendascloud_meta_${usuarioLogado.email.toLowerCase()}`);
+    setMetaMensal(metaSalva ? Number(metaSalva) : 15000);
   }, [usuarioLogado]);
 
   function handleLogin(e: FormEvent) {
@@ -130,6 +147,7 @@ export default function App() {
   function handleLogout() {
     localStorage.removeItem("vendascloud_sessao");
     setUsuarioLogado(null);
+    setVendas([]);
     setEmailInput("");
     setSenhaInput("");
     setErroAuth("");
@@ -142,6 +160,8 @@ export default function App() {
 
   async function handleAdicionarVenda(e: FormEvent) {
     e.preventDefault();
+    if (!usuarioLogado) return;
+
     const valorNumerico = Number(valor.replace(",", "."));
     if (!cliente.trim() || !produto.trim() || Number.isNaN(valorNumerico) || valorNumerico <= 0) {
       mostrarToast("Preencha cliente, produto e um valor válido.");
@@ -155,6 +175,7 @@ export default function App() {
         produto: produto.trim(),
         valor: valorNumerico,
         status,
+        usuarioEmail: usuarioLogado.email.toLowerCase(),
       });
       setCliente("");
       setProduto("");
@@ -168,13 +189,15 @@ export default function App() {
   }
 
   async function handleGerarDemo() {
+    if (!usuarioLogado) return;
     setSalvando(true);
+    const emailAtual = usuarioLogado.email.toLowerCase();
     const exemplos = [
-      { cliente: "Tech Solutions Ltda", produto: "Plano Cloud Enterprise", valor: 4200, status: "Pago" },
-      { cliente: "Marina Costa", produto: "Consultoria Arquitetura AWS", valor: 1850, status: "Pago" },
-      { cliente: "Grupo Horizonte", produto: "Licença Anual SaaS", valor: 3100, status: "Pendente" },
-      { cliente: "Lucas Mendes", produto: "Implantação E-commerce", valor: 2400, status: "Pago" },
-      { cliente: "Studio Criativo", produto: "Manutenção Mensal", valor: 650, status: "Cancelado" },
+      { cliente: "Tech Solutions Ltda", produto: "Plano Cloud Enterprise", valor: 4200, status: "Pago", usuarioEmail: emailAtual },
+      { cliente: "Marina Costa", produto: "Consultoria Arquitetura AWS", valor: 1850, status: "Pago", usuarioEmail: emailAtual },
+      { cliente: "Grupo Horizonte", produto: "Licença Anual SaaS", valor: 3100, status: "Pendente", usuarioEmail: emailAtual },
+      { cliente: "Lucas Mendes", produto: "Implantação E-commerce", valor: 2400, status: "Pago", usuarioEmail: emailAtual },
+      { cliente: "Studio Criativo", produto: "Manutenção Mensal", valor: 650, status: "Cancelado", usuarioEmail: emailAtual },
     ];
     try {
       for (const item of exemplos) {
@@ -219,9 +242,14 @@ export default function App() {
 
   function handleSalvarMeta(e: FormEvent) {
     e.preventDefault();
+    if (!usuarioLogado) return;
     const valorMeta = Number(novaMetaInput.replace(",", "."));
     if (!Number.isNaN(valorMeta) && valorMeta > 0) {
       setMetaMensal(valorMeta);
+      localStorage.setItem(
+        `vendascloud_meta_${usuarioLogado.email.toLowerCase()}`,
+        String(valorMeta)
+      );
       setEditandoMeta(false);
       mostrarToast("Meta mensal atualizada!");
     }
@@ -260,7 +288,6 @@ export default function App() {
   const qtdCancelado = vendas.filter((v) => v.status === "Cancelado").length;
   const taxaConversao = totalVendas > 0 ? Math.round((qtdPago / totalVendas) * 100) : 0;
 
-  // Tela de Login / Criar Conta
   if (!usuarioLogado) {
     return (
       <div
@@ -286,7 +313,10 @@ export default function App() {
             </div>
           </div>
 
-          <div className="filter-tabs" style={{ marginBottom: "20px", display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+          <div
+            className="filter-tabs"
+            style={{ marginBottom: "20px", display: "grid", gridTemplateColumns: "1fr 1fr" }}
+          >
             <button
               type="button"
               className={`tab-btn ${modoAuth === "login" ? "active" : ""}`}
@@ -350,7 +380,11 @@ export default function App() {
               <input
                 type="password"
                 className="input-dark"
-                placeholder={modoAuth === "cadastro" ? "Crie uma senha (mín. 4 caracteres)" : "Digite sua senha"}
+                placeholder={
+                  modoAuth === "cadastro"
+                    ? "Crie uma senha (mín. 4 caracteres)"
+                    : "Digite sua senha"
+                }
                 value={senhaInput}
                 onChange={(e) => {
                   setSenhaInput(e.target.value);
@@ -375,7 +409,11 @@ export default function App() {
               </div>
             )}
 
-            <button type="submit" className="btn-primary" style={{ marginTop: "6px", width: "100%" }}>
+            <button
+              type="submit"
+              className="btn-primary"
+              style={{ marginTop: "6px", width: "100%" }}
+            >
               {modoAuth === "login" ? "Entrar no Painel" : "Criar Conta e Entrar"}
             </button>
           </form>
@@ -384,7 +422,6 @@ export default function App() {
     );
   }
 
-  // Painel Principal
   return (
     <div className="app-shell">
       <div className="bg-glow bg-glow-1" />
@@ -554,158 +591,3 @@ export default function App() {
                 <button
                   key={aba}
                   type="button"
-                  className={`tab-btn ${filtroStatus === aba ? "active" : ""}`}
-                  onClick={() => setFiltroStatus(aba)}
-                >
-                  {aba}
-                </button>
-              ))}
-            </div>
-
-            <div className="toolbar-controls">
-              <input
-                type="text"
-                className="input-dark"
-                placeholder="Buscar cliente ou produto..."
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-              />
-              <select
-                className="input-dark"
-                value={ordenacao}
-                onChange={(e) => setOrdenacao(e.target.value as Ordenacao)}
-              >
-                <option value="recentes">Mais recentes</option>
-                <option value="maior">Maior valor</option>
-                <option value="menor">Menor valor</option>
-              </select>
-            </div>
-          </div>
-
-          {vendasFiltradas.length === 0 ? (
-            <div className="empty-state">
-              <p>Nenhuma venda encontrada.</p>
-              <span>Clique em "+ Nova Venda" ou em "⚡ Dados Demo" para preencher o painel.</span>
-            </div>
-          ) : (
-            <div className="table-wrapper">
-              <table className="sales-table">
-                <thead>
-                  <tr>
-                    <th>Cliente</th>
-                    <th>Produto / Serviço</th>
-                    <th>Valor</th>
-                    <th>Status</th>
-                    <th>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vendasFiltradas.map((venda) => (
-                    <tr key={venda.id} className="table-row">
-                      <td className="font-medium">{venda.cliente}</td>
-                      <td className="muted-cell">{venda.produto}</td>
-                      <td className="value-cell">{formatarMoeda(venda.valor)}</td>
-                      <td>
-                        <span className={`pill ${venda.status.toLowerCase()}`}>{venda.status}</span>
-                      </td>
-                      <td className="actions-cell">
-                        <button
-                          type="button"
-                          className="btn-mini"
-                          onClick={() => handleAlternarStatus(venda)}
-                        >
-                          Alterar Status
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-mini danger"
-                          onClick={() => handleExcluir(venda.id)}
-                        >
-                          Excluir
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      </main>
-
-      {modalAberto && (
-        <div className="modal-overlay" onClick={() => setModalAberto(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Registrar Nova Venda</h2>
-              <button type="button" className="close-btn" onClick={() => setModalAberto(false)}>
-                ✕
-              </button>
-            </div>
-            <form className="modal-form" onSubmit={handleAdicionarVenda}>
-              <label>
-                <span>Cliente</span>
-                <input
-                  type="text"
-                  className="input-dark"
-                  placeholder="Ex: Empresa Alpha"
-                  value={cliente}
-                  onChange={(e) => setCliente(e.target.value)}
-                  required
-                />
-              </label>
-              <label>
-                <span>Produto ou Serviço</span>
-                <input
-                  type="text"
-                  className="input-dark"
-                  placeholder="Ex: Consultoria Cloud"
-                  value={produto}
-                  onChange={(e) => setProduto(e.target.value)}
-                  required
-                />
-              </label>
-              <div className="form-row">
-                <label>
-                  <span>Valor (R$)</span>
-                  <input
-                    type="text"
-                    className="input-dark"
-                    placeholder="1250.00"
-                    value={valor}
-                    onChange={(e) => setValor(e.target.value)}
-                    required
-                  />
-                </label>
-                <label>
-                  <span>Status</span>
-                  <select
-                    className="input-dark"
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value)}
-                  >
-                    <option value="Pago">Pago</option>
-                    <option value="Pendente">Pendente</option>
-                    <option value="Cancelado">Cancelado</option>
-                  </select>
-                </label>
-              </div>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => setModalAberto(false)}
-                >
-                  Cancelar
-                </button>
-                <button type="submit" className="btn-primary" disabled={salvando}>
-                  {salvando ? "Salvando..." : "Confirmar Venda"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
